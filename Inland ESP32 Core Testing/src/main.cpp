@@ -17,6 +17,109 @@
 #include <BLEServer.h> 
 #include <BLE2902.h>
 
+
+/////////////////////////////////////////////////////////
+// Time Of Flight Code
+/////////////////////////////////////////////////////////
+#include <Wire.h>
+#include <VL53L0X.h>
+
+int distance = 0;  // Distance Calculation
+long lastDistanceReadTimestamp = 0;
+uint8_t distanceCommandReceived = false;
+
+/////////////////////////////////////////////////////
+// Distance Sensor code HC-SR04
+/////////////////////////////////////////////////////
+#define echoPin 16
+#define trigPin 17
+
+long duration = 0; // Variable for the duration of sound wave travel
+#define TRIGGER_DISTANCE 7
+
+/**
+ * @brief Setup the pins for the distance sensor
+ * 
+ */
+void setupDistanceSensor() {
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+}
+
+/**
+ * @brief 4 pin echo sensor function
+ * 
+ * @return distance integer in cm
+ */
+int measureDistance() {
+  // Clear the trigger pin
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  // Send a 10uS pulse
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  // Reads the echoPin, returns the pulse echo response time
+  duration = pulseIn(echoPin, HIGH);
+
+  // Calculating the distance in CM
+  distance = duration / 58;
+
+  lastDistanceReadTimestamp = millis();
+
+  return distance;
+}
+
+
+/////////////////////////////////////////////////////////
+// Time Of Flight Code
+/////////////////////////////////////////////////////////
+VL53L0X sensor;
+
+/**
+ * @brief ToF Sensor setup
+ * 
+ */
+void setupToFSensor()
+{
+  Wire.begin();
+
+  sensor.setTimeout(500);
+  if (!sensor.init())
+  {
+    Serial.println("Failed to detect and initialize sensor!");
+    while (1) {
+      // Why do examples have this?
+    }
+  }
+
+  // Start continuous back-to-back mode (take readings as
+  // fast as possible).  To use continuous timed mode
+  // instead, provide a desired inter-measurement period in
+  // ms (e.g. sensor.startContinuous(100)).
+  sensor.startContinuous();
+}
+
+/**
+ * @brief Time of Flight
+ * 
+ */
+void runToF()
+{
+  int mm = sensor.readRangeContinuousMillimeters();
+  distance = mm * 10;
+
+  Serial.print(mm);
+  if (sensor.timeoutOccurred()) { 
+    Serial.print(" TIMEOUT"); 
+  }
+}
+
+/////////////////////////////////////////////////////////
+// Servo Code
+/////////////////////////////////////////////////////////
 Servo servo;
 int pos = 0; 
 int servoPin = 33;
@@ -105,53 +208,6 @@ void setupBle() {
   pAdvertising->start();  
 }
 
-/////////////////////////////////////////////////////
-// Distance Sensor code HC-SR04
-/////////////////////////////////////////////////////
-#define echoPin 16
-#define trigPin 17
-
-long duration = 0; // Variable for the duration of sound wave travel
-int distance = 0;  // Distance Calculation
-long lastDistanceReadTimestamp = 0;
-uint8_t distanceCommandReceived = false;
-#define TRIGGER_DISTANCE 7
-
-/**
- * @brief Setup the pins for the distance sensor
- * 
- */
-void setupDistanceSensor() {
-  pinMode(trigPin, OUTPUT);
-  pinMode(echoPin, INPUT);
-}
-
-/**
- * @brief 
- * 
- * @return int 
- */
-int measureDistance() {
-  // Clear the trigger pin
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-
-  // Send a 10uS pulse
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-
-  // Reads the echoPin, returns the pulse echo response time
-  duration = pulseIn(echoPin, HIGH);
-
-  // Calculating the distance in CM
-  distance = duration / 58;
-
-  lastDistanceReadTimestamp = millis();
-
-  return distance;
-}
-
 /**
  * @brief Setup the Serial Port and Servo
  *
@@ -177,7 +233,8 @@ void loop()
 {
   // Only measure the distance every 200mS
   if ((millis() - lastDistanceReadTimestamp) > 200) {
-    Serial.println(measureDistance());
+    // Time of flight
+    runToF();
   }
 
   if (distance <= TRIGGER_DISTANCE) {
